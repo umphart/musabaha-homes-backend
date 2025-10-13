@@ -8,12 +8,6 @@ const Admin = require('./models/Admin');
 const fs = require('fs');
 const path = require('path');
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Uploads directory created');
-}
 // Load env vars
 dotenv.config();
 
@@ -22,39 +16,66 @@ const app = express();
 // Security middleware
 app.use(helmet());
 
-// CORS middleware
+// CORS middleware - FIXED
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
-  credentials: true
+  origin: [
+    'https://musabaha-homes-ltd.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
-// Serve uploaded files
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// Handle preflight requests
+app.options('*', cors());
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve uploaded files
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  console.log('Uploads directory created');
+}
+
+// Import routes
 const userSubsequentPaymentsRoutes = require("./routes/userSubsequentPayments");
+const plotRoutes = require('./routes/plots');
+const subscriptionRoutes = require('./routes/subscriptions');
+const userPaymentRoutes = require('./routes/UserPayment');
+
+// Use routes
 app.use("/api/user-subsequent-payments", userSubsequentPaymentsRoutes);
 app.use('/api/layout-plan', require('./routes/LayoutPlan'));
-
-const plotRoutes = require('./routes/plots');
 app.use('/api/plots', plotRoutes);
-const subscriptionRoutes = require('./routes/subscriptions');
 app.use('/api/subscriptions', subscriptionRoutes);
-const userPaymentRoutes = require('./routes/UserPayment');
 app.use('/api/user-payments', userPaymentRoutes);
-
-
 
 // Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback-secret-key', {
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
   });
 };
 
 // ====================== AUTHENTICATION ENDPOINTS ======================
+
+// Test connection endpoint
+app.get('/api/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Backend is connected successfully!',
+    frontend: 'musabaha-homes-ltd.vercel.app',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // User registration endpoint
 app.post('/api/auth/register', async (req, res) => {
@@ -168,6 +189,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   }
 });
+
 // Get all users
 app.get('/api/auth/users', async (req, res) => {
   try {
@@ -229,6 +251,7 @@ app.post('/api/admin/register', async (req, res) => {
           id: admin.id,
           name: admin.name,
           email: admin.email,
+          token: generateToken(admin.id),
         },
         message: 'Admin registered successfully'
       });
@@ -305,7 +328,7 @@ app.get('/api/auth/me', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Get user from database
     const user = await User.findById(decoded.id);
@@ -356,7 +379,7 @@ app.get('/api/admin/me', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Get admin from database
     const admin = await Admin.findById(decoded.id);
@@ -409,7 +432,7 @@ app.get('/api/admin/users', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Verify admin exists
     const admin = await Admin.findById(decoded.id);
@@ -458,7 +481,7 @@ app.get('/api/admin/users/:id', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Verify admin exists
     const admin = await Admin.findById(decoded.id);
@@ -514,7 +537,7 @@ app.post('/api/admin/users', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Verify admin exists
     const admin = await Admin.findById(decoded.id);
@@ -600,7 +623,7 @@ app.post('/api/admin/payments', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Verify admin exists
     const admin = await Admin.findById(decoded.id);
@@ -671,7 +694,7 @@ app.get('/api/admin/payments/user/:id', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'fallback-secret-key');
     
     // Verify admin exists
     const admin = await Admin.findById(decoded.id);
@@ -713,10 +736,11 @@ app.get('/api/health', (req, res) => {
   res.json({ 
     success: true,
     message: 'Musabaha Homes API server is running!',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
- 
+
 // ====================== ERROR HANDLING MIDDLEWARE ======================
 
 // Handle 404 - This should be AFTER all other routes
@@ -741,7 +765,8 @@ app.use((error, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`✅ Health check: https://musabaha-homes.onrender.com/api/health`);
+  console.log(`🔗 Frontend URL: https://musabaha-homes-ltd.vercel.app`);
+  console.log(`🧪 Test endpoint: https://musabaha-homes.onrender.com/api/test`);
 });
