@@ -9,11 +9,10 @@ const UserPayment = {
     const {
       user_id,
       subscription_id,
-      plot_id, // Add plot_id
+      plot_id,
       amount,
       payment_method,
       transaction_date,
-      transaction_reference,
       notes,
       receipt_file,
       confirmed,
@@ -28,21 +27,20 @@ const UserPayment = {
     const query = `
       INSERT INTO userPayments 
       (user_id, subscription_id, plot_id, amount, payment_method, transaction_date, 
-       transaction_reference, notes, receipt_file, confirmed, plot_size, 
+       notes, receipt_file, confirmed, plot_size, 
        number_of_plots, total_price, outstanding_balance, name, contact, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
       RETURNING *
     `;
 
     const values = [
       user_id,
       subscription_id,
-      plot_id, // Include plot_id
+      plot_id,
       amount,
       payment_method,
       transaction_date,
-      transaction_reference,
-      notes,
+      notes || '', // Default to empty string if null
       receipt_file,
       confirmed,
       plot_size,
@@ -50,7 +48,7 @@ const UserPayment = {
       total_price,
       outstanding_balance,
       name,
-      contact,
+      contact || '', // Default to empty string if null
     ];
 
     const result = await pool.query(query, values);

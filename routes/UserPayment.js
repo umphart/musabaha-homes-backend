@@ -1,3 +1,4 @@
+// routes/userPayments.js
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
@@ -29,7 +30,6 @@ router.post("/", upload.single("receipt"), async (req, res) => {
       userId,
       paymentMethod,
       transactionDate,
-      transactionReference,
       notes,
       confirmed,
       plotSize,
@@ -49,8 +49,7 @@ router.post("/", upload.single("receipt"), async (req, res) => {
       amount: parseFloat(amount),
       payment_method: paymentMethod,
       transaction_date: transactionDate ? new Date(transactionDate) : new Date(),
-      transaction_reference: transactionReference,
-      notes,
+      notes: notes || '',
       receipt_file: req.file ? req.file.filename : null,
       confirmed: confirmed === "true" || confirmed === true,
       plot_size: plotSize,
@@ -59,8 +58,8 @@ router.post("/", upload.single("receipt"), async (req, res) => {
       outstanding_balance: outstandingBalance
         ? parseFloat(outstandingBalance)
         : null,
-      name,
-      contact,
+      name: name || '',
+      contact: contact || '', // Ensure contact is not undefined
       status: "pending", // ✅ Always pending
     };
 

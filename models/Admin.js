@@ -46,28 +46,28 @@ const Admin = {
 
   // ====================== Users (usersTable) ======================
 
-  async createUser(userData) {
-    const {
-      name,
-      contact,
-      plot_taken,
-      date_taken,
-      initial_deposit,
-      price_per_plot,
-      payment_schedule
-    } = userData;
+async createUser(userData) {
+  const {
+    name,
+    contact,
+    plot_taken,
+    date_taken,
+    initial_deposit,
+    price_per_plot, // This should be "300000,70000" from frontend
+    payment_schedule,
+    total_money_to_pay // This should be 370000 from frontend
+  } = userData;
 
-    // Calculate total money to pay
-    const total_money_to_pay = await this.calculateTotalMoneyToPay(plot_taken, price_per_plot);
-    
-    // Calculate initial balance (total - initial deposit)
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
     const initialDepositValue = parseFloat(initial_deposit) || 0;
     const total_balance = total_money_to_pay - initialDepositValue;
-    
-    // Set initial status
     const status = initialDepositValue >= total_money_to_pay ? 'Completed' : 'Active';
 
-    const query = `
+    // Insert user
+    const userQuery = `
       INSERT INTO usersTable 
       (name, contact, plot_taken, date_taken, initial_deposit, price_per_plot, 
        payment_schedule, total_balance, total_money_to_pay, status)
@@ -75,22 +75,55 @@ const Admin = {
       RETURNING *
     `;
 
-    const values = [
+    const userValues = [
       name,
       contact,
       plot_taken,
       date_taken,
       initial_deposit,
-      price_per_plot,
+      price_per_plot, // This will store "300000,70000"
       payment_schedule,
       total_balance,
-      total_money_to_pay,
+      total_money_to_pay, // This will store 370000
       status
     ];
 
-    const result = await pool.query(query, values);
-    return result.rows[0];
-  },
+    console.log('Inserting into database with values:', userValues);
+
+    const userResult = await client.query(userQuery, userValues);
+    const newUser = userResult.rows[0];
+
+    // Update plots status
+    if (plot_taken) {
+      const plotNumbers = plot_taken.split(',').map(plot => plot.trim());
+      
+      for (const plotNumber of plotNumbers) {
+        const updatePlotQuery = `
+          UPDATE plots 
+          SET status = 'Sold', 
+              owner = $1, 
+              reserved_at = NOW(), 
+              updated_at = NOW()
+          WHERE number = $2 AND status = 'Available'
+          RETURNING *
+        `;
+        
+        const plotValues = [name, plotNumber];
+        await client.query(updatePlotQuery, plotValues);
+      }
+    }
+
+    await client.query('COMMIT');
+    return newUser;
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creating user and updating plots:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+},
 
   async getAllUsers() {
     const query = 'SELECT * FROM usersTable ORDER BY id ASC';

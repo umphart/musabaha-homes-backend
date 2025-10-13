@@ -36,6 +36,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const userSubsequentPaymentsRoutes = require("./routes/userSubsequentPayments");
 app.use("/api/user-subsequent-payments", userSubsequentPaymentsRoutes);
+app.use('/api/layout-plan', require('./routes/layoutPlan'));
 
 const plotRoutes = require('./routes/plots');
 app.use('/api/plots', plotRoutes);

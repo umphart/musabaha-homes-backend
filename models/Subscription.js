@@ -1,4 +1,3 @@
-// models/Subscription.js
 const pool = require('../config/database');
 
 const Subscription = {
@@ -14,42 +13,32 @@ const Subscription = {
       stateOfOrigin: 'state_of_origin',
       lga: 'lga',
       sex: 'sex',
-      telephone: 'telephone',
+      phoneNumber: 'phone_number', 
       nationality: 'nationality',
-      officeNumber: 'office_number',
       homeNumber: 'home_number',
-      postalAddress: 'postal_address',
       email: 'email',
       identification: 'identification',
-      utilityBill: 'utility_bill',
       passportPhoto: 'passport_photo',
       identificationFile: 'identification_file',
-      utilityBillFile: 'utility_bill_file',
       nextOfKinName: 'next_of_kin_name',
       nextOfKinAddress: 'next_of_kin_address',
       nextOfKinRelationship: 'next_of_kin_relationship',
-      nextOfKinTel: 'next_of_kin_tel',
+      nextOfKinPhoneNumber: 'next_of_kin_phone_number', 
       nextOfKinOccupation: 'next_of_kin_occupation',
       nextOfKinOfficeAddress: 'next_of_kin_office_address',
-      nextOfKinEmail: 'next_of_kin_email',
-      estateName: 'estate_name',
+      layoutName: 'layout_name', 
       numberOfPlots: 'number_of_plots',
       proposedUse: 'proposed_use',
       proposedType: 'proposed_type',
-      price:'price',
       plotSize: 'plot_size',
       paymentTerms: 'payment_terms',
-      altContactName: 'alt_contact_name',
-      altContactAddress: 'alt_contact_address',
-      altContactRelationship: 'alt_contact_relationship',
-      altContactTel: 'alt_contact_tel',
-      altContactEmail: 'alt_contact_email',
-      referralAgentName: 'referral_agent_name',
-      referralAgentContact: 'referral_agent_contact',
+      price: 'price',
+      price_per_plot: 'price_per_plot',
       agreedToTerms: 'agreed_to_terms',
       signatureText: 'signature_text',
       signatureFile: 'signature_file',
-      plotId: 'plot_id', 
+      plotId: 'plot_id',
+      plot_ids: 'plot_ids', // ✅ ADD THIS FIELD MAPPING
     };
 
     // Filter out undefined values and map to database columns
@@ -66,6 +55,11 @@ const Subscription = {
         paramCount++;
       }
     }
+
+    // Add created_at timestamp
+    columns.push('created_at');
+    values.push(new Date());
+    placeholders.push(`$${paramCount}`);
 
     if (columns.length === 0) {
       throw new Error('No valid data provided for insertion');
@@ -89,31 +83,53 @@ const Subscription = {
     }
   },
 
+  // ... rest of your methods remain the same
   getAll: async () => {
     const query = 'SELECT * FROM subscriptions ORDER BY created_at DESC';
     const result = await pool.query(query);
     return result.rows;
   },
 
-  getById: async (id) => {
-    const query = 'SELECT * FROM subscriptions WHERE id = $1';
-    const result = await pool.query(query, [id]);
+getById: async (id) => {
+  const query = 'SELECT * FROM subscriptions WHERE id = $1';
+  const result = await pool.query(query, [id]);
+  
+  if (result.rows[0]) {
+    const subscription = result.rows[0];
+    
+    // Parse plot_ids if it exists and is a string
+    if (subscription.plot_ids && typeof subscription.plot_ids === 'string') {
+      subscription.plot_ids_array = subscription.plot_ids.split(',')
+        .map(plotId => plotId.trim())
+        .filter(plotId => plotId !== '');
+    } else {
+      subscription.plot_ids_array = [];
+    }
+    
+    return subscription;
+  }
+  
+  return null;
+},
+
+  findByEmail: async (email) => {
+    const query = 'SELECT * FROM subscriptions WHERE email = $1 ORDER BY created_at DESC';
+    const result = await pool.query(query, [email]);
+    return result.rows;
+  },
+
+  updateStatus: async (id, status) => {
+    const query = "UPDATE subscriptions SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *";
+    const values = [status, id];
+    const result = await pool.query(query, values);
     return result.rows[0];
   },
-  // In models/Subscription.js
-findByEmail: async (email) => {
-  const query = 'SELECT * FROM subscriptions WHERE email = $1 ORDER BY created_at DESC';
-  const result = await pool.query(query, [email]);
-  return result.rows;
-},
-updateStatus: async (id, status) => {
-  const query = "UPDATE subscriptions SET status = $1 WHERE id = $2 RETURNING *";
-  const values = [status, id];
-  const result = await pool.query(query, values);
-  return result.rows[0];
-},
 
+  // Add method to check if plot is already reserved
+  isPlotReserved: async (plotId) => {
+    const query = 'SELECT * FROM subscriptions WHERE plot_id = $1 AND status IN ($2, $3)';
+    const result = await pool.query(query, [plotId, 'pending', 'approved']);
+    return result.rows.length > 0;
+  }
 };
-
-
 module.exports = Subscription;
