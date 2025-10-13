@@ -1,5 +1,5 @@
-//models/Admin.js
-const pool = require('../config/database');
+// models/Admin.js
+const db = require('../config/database');
 const bcrypt = require('bcryptjs');
 
 const Admin = {
@@ -18,7 +18,7 @@ const Admin = {
     const values = [name, email, hashedPassword];
 
     try {
-      const result = await pool.query(query, values);
+      const result = await db.query(query, values);
       return result.rows[0];
     } catch (error) {
       if (error.code === '23505') {
@@ -30,13 +30,13 @@ const Admin = {
 
   async findByEmail(email) {
     const query = 'SELECT * FROM admins WHERE email = $1';
-    const result = await pool.query(query, [email]);
+    const result = await db.query(query, [email]);
     return result.rows[0];
   },
 
   async findById(id) {
     const query = 'SELECT id, name, email, created_at, updated_at FROM admins WHERE id = $1';
-    const result = await pool.query(query, [id]);
+    const result = await db.query(query, [id]);
     return result.rows[0];
   },
 
@@ -46,90 +46,89 @@ const Admin = {
 
   // ====================== Users (usersTable) ======================
 
-async createUser(userData) {
-  const {
-    name,
-    contact,
-    plot_taken,
-    date_taken,
-    initial_deposit,
-    price_per_plot, // This should be "300000,70000" from frontend
-    payment_schedule,
-    total_money_to_pay // This should be 370000 from frontend
-  } = userData;
-
-  const client = await pool.connect();
-
-  try {
-    await client.query('BEGIN');
-    const initialDepositValue = parseFloat(initial_deposit) || 0;
-    const total_balance = total_money_to_pay - initialDepositValue;
-    const status = initialDepositValue >= total_money_to_pay ? 'Completed' : 'Active';
-
-    // Insert user
-    const userQuery = `
-      INSERT INTO usersTable 
-      (name, contact, plot_taken, date_taken, initial_deposit, price_per_plot, 
-       payment_schedule, total_balance, total_money_to_pay, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *
-    `;
-
-    const userValues = [
+  async createUser(userData) {
+    const {
       name,
       contact,
       plot_taken,
       date_taken,
       initial_deposit,
-      price_per_plot, // This will store "300000,70000"
+      price_per_plot,
       payment_schedule,
-      total_balance,
-      total_money_to_pay, // This will store 370000
-      status
-    ];
+      total_money_to_pay
+    } = userData;
 
-    console.log('Inserting into database with values:', userValues);
+    const client = await db.getClient(); // Use getClient instead of pool.connect
 
-    const userResult = await client.query(userQuery, userValues);
-    const newUser = userResult.rows[0];
+    try {
+      await client.query('BEGIN');
+      const initialDepositValue = parseFloat(initial_deposit) || 0;
+      const total_balance = total_money_to_pay - initialDepositValue;
+      const status = initialDepositValue >= total_money_to_pay ? 'Completed' : 'Active';
 
-    // Update plots status
-    if (plot_taken) {
-      const plotNumbers = plot_taken.split(',').map(plot => plot.trim());
-      
-      for (const plotNumber of plotNumbers) {
-        const updatePlotQuery = `
-          UPDATE plots 
-          SET status = 'Sold', 
-              owner = $1, 
-              reserved_at = NOW(), 
-              updated_at = NOW()
-          WHERE number = $2 AND status = 'Available'
-          RETURNING *
-        `;
+      // Insert user
+      const userQuery = `
+        INSERT INTO usersTable 
+        (name, contact, plot_taken, date_taken, initial_deposit, price_per_plot, 
+         payment_schedule, total_balance, total_money_to_pay, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+      `;
+
+      const userValues = [
+        name,
+        contact,
+        plot_taken,
+        date_taken,
+        initial_deposit,
+        price_per_plot,
+        payment_schedule,
+        total_balance,
+        total_money_to_pay,
+        status
+      ];
+
+      console.log('Inserting into database with values:', userValues);
+
+      const userResult = await client.query(userQuery, userValues);
+      const newUser = userResult.rows[0];
+
+      // Update plots status
+      if (plot_taken) {
+        const plotNumbers = plot_taken.split(',').map(plot => plot.trim());
         
-        const plotValues = [name, plotNumber];
-        await client.query(updatePlotQuery, plotValues);
+        for (const plotNumber of plotNumbers) {
+          const updatePlotQuery = `
+            UPDATE plots 
+            SET status = 'Sold', 
+                owner = $1, 
+                reserved_at = NOW(), 
+                updated_at = NOW()
+            WHERE number = $2 AND status = 'Available'
+            RETURNING *
+          `;
+          
+          const plotValues = [name, plotNumber];
+          await client.query(updatePlotQuery, plotValues);
+        }
       }
+
+      await client.query('COMMIT');
+      return newUser;
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating user and updating plots:', error);
+      throw error;
+    } finally {
+      client.release();
     }
-
-    await client.query('COMMIT');
-    return newUser;
-
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error creating user and updating plots:', error);
-    throw error;
-  } finally {
-    client.release();
-  }
-},
+  },
 
   async getAllUsers() {
     const query = 'SELECT * FROM usersTable ORDER BY id ASC';
-    const result = await pool.query(query);
+    const result = await db.query(query);
     
-    // For each user, calculate current balance based on initial deposit + payments
     const usersWithUpdatedBalance = await Promise.all(
       result.rows.map(async (user) => {
         const payments = await this.getPaymentsByUser(user.id);
@@ -137,25 +136,21 @@ async createUser(userData) {
         const totalPaid = parseFloat(user.initial_deposit || 0) + totalSubsequentPayments;
         const currentBalance = Math.max(0, parseFloat(user.total_money_to_pay) - totalPaid);
         
-        // Update status if fully paid
         let status = user.status;
         if (currentBalance <= 0 && user.status !== 'Completed') {
           status = 'Completed';
-          // Update user status in database
-          await pool.query(
+          await db.query(
             'UPDATE usersTable SET status = $1, total_balance = $2 WHERE id = $3',
             [status, 0, user.id]
           );
         } else if (currentBalance > 0 && user.status === 'Completed') {
           status = 'Active';
-          // Update user status if somehow it was marked completed but has balance
-          await pool.query(
+          await db.query(
             'UPDATE usersTable SET status = $1, total_balance = $2 WHERE id = $3',
             [status, currentBalance, user.id]
           );
         } else {
-          // Update balance only (status remains the same)
-          await pool.query(
+          await db.query(
             'UPDATE usersTable SET total_balance = $1 WHERE id = $2',
             [currentBalance, user.id]
           );
@@ -176,7 +171,7 @@ async createUser(userData) {
 
   async getUserById(userId) {
     const query = 'SELECT * FROM usersTable WHERE id = $1';
-    const result = await pool.query(query, [userId]);
+    const result = await db.query(query, [userId]);
     
     if (result.rows.length === 0) {
       return null;
@@ -188,25 +183,21 @@ async createUser(userData) {
     const totalPaid = parseFloat(user.initial_deposit || 0) + totalSubsequentPayments;
     const currentBalance = Math.max(0, parseFloat(user.total_money_to_pay) - totalPaid);
     
-    // Update status if fully paid
     let status = user.status;
     if (currentBalance <= 0 && user.status !== 'Completed') {
       status = 'Completed';
-      // Update user status in database
-      await pool.query(
+      await db.query(
         'UPDATE usersTable SET status = $1, total_balance = $2 WHERE id = $3',
         [status, 0, userId]
       );
     } else if (currentBalance > 0 && user.status === 'Completed') {
       status = 'Active';
-      // Update user status if somehow it was marked completed but has balance
-      await pool.query(
+      await db.query(
         'UPDATE usersTable SET status = $1, total_balance = $2 WHERE id = $3',
         [status, currentBalance, userId]
       );
     } else {
-      // Update balance only (status remains the same)
-      await pool.query(
+      await db.query(
         'UPDATE usersTable SET total_balance = $1 WHERE id = $2',
         [currentBalance, userId]
       );
@@ -217,97 +208,90 @@ async createUser(userData) {
       total_balance: currentBalance,
       total_paid: totalPaid,
       status: status,
-      payments: payments // Include payments in the response
+      payments: payments
     };
   },
 
   // ====================== Payments ======================
 
-async createPayment(paymentData) {
-  const { user_id, amount, date, note, admin, recorded_by } = paymentData;
+  async createPayment(paymentData) {
+    const { user_id, amount, date, note, admin, recorded_by } = paymentData;
+    const recorder = recorded_by || admin;
 
-  // ✅ Use recorded_by if provided, otherwise fallback to admin
-  const recorder = recorded_by || admin;
+    const client = await db.getClient(); // Use getClient here
 
-  // Start transaction
-  const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-  try {
-    await client.query('BEGIN');
+      const paymentQuery = `
+        INSERT INTO payments (user_id, amount, date, note, recorded_by)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+      const paymentValues = [user_id, amount, date, note, recorder];
+      const paymentResult = await client.query(paymentQuery, paymentValues);
+      const payment = paymentResult.rows[0];
 
-    // 1. Create the payment
-    const paymentQuery = `
-      INSERT INTO payments (user_id, amount, date, note, recorded_by)
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING *
-    `;
-    const paymentValues = [user_id, amount, date, note, recorder];
-    const paymentResult = await client.query(paymentQuery, paymentValues);
-    const payment = paymentResult.rows[0];
+      const userQuery = 'SELECT * FROM usersTable WHERE id = $1';
+      const userResult = await client.query(userQuery, [user_id]);
+      const user = userResult.rows[0];
 
-    // 2. Get user details
-    const userQuery = 'SELECT * FROM usersTable WHERE id = $1';
-    const userResult = await client.query(userQuery, [user_id]);
-    const user = userResult.rows[0];
-
-    if (!user) {
-      throw new Error('User not found');
-    }
-
-    // 3. Get all payments for this user (including the new one)
-    const paymentsQuery = 'SELECT * FROM payments WHERE user_id = $1';
-    const paymentsResult = await client.query(paymentsQuery, [user_id]);
-    const userPayments = paymentsResult.rows;
-
-    const totalSubsequentPayments = userPayments.reduce(
-      (sum, p) => sum + parseFloat(p.amount || 0),
-      0
-    );
-    const totalPaid =
-      parseFloat(user.initial_deposit || 0) + totalSubsequentPayments;
-    const currentBalance = Math.max(
-      0,
-      parseFloat(user.total_money_to_pay || 0) - totalPaid
-    );
-
-    // 4. Update user balance and status
-    let status = user.status;
-    if (currentBalance <= 0) {
-      status = 'Completed';
-    } else if (currentBalance > 0 && status === 'Completed') {
-      status = 'Active';
-    }
-
-    const updateUserQuery = `
-      UPDATE usersTable 
-      SET total_balance = $1, status = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-    `;
-    const updateValues = [currentBalance, status, user_id];
-    await client.query(updateUserQuery, updateValues);
-
-    await client.query('COMMIT');
-
-    return {
-      success: true,
-      payment: {
-        ...payment,
-        user_balance: currentBalance,
-        user_status: status,
-        total_paid: totalPaid
+      if (!user) {
+        throw new Error('User not found');
       }
-    };
-  } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('Error creating payment:', error);
-    return {
-      success: false,
-      message: error.message || 'Failed to create payment'
-    };
-  } finally {
-    client.release();
-  }
-},
+
+      const paymentsQuery = 'SELECT * FROM payments WHERE user_id = $1';
+      const paymentsResult = await client.query(paymentsQuery, [user_id]);
+      const userPayments = paymentsResult.rows;
+
+      const totalSubsequentPayments = userPayments.reduce(
+        (sum, p) => sum + parseFloat(p.amount || 0),
+        0
+      );
+      const totalPaid =
+        parseFloat(user.initial_deposit || 0) + totalSubsequentPayments;
+      const currentBalance = Math.max(
+        0,
+        parseFloat(user.total_money_to_pay || 0) - totalPaid
+      );
+
+      let status = user.status;
+      if (currentBalance <= 0) {
+        status = 'Completed';
+      } else if (currentBalance > 0 && status === 'Completed') {
+        status = 'Active';
+      }
+
+      const updateUserQuery = `
+        UPDATE usersTable 
+        SET total_balance = $1, status = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `;
+      const updateValues = [currentBalance, status, user_id];
+      await client.query(updateUserQuery, updateValues);
+
+      await client.query('COMMIT');
+
+      return {
+        success: true,
+        payment: {
+          ...payment,
+          user_balance: currentBalance,
+          user_status: status,
+          total_paid: totalPaid
+        }
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating payment:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to create payment'
+      };
+    } finally {
+      client.release();
+    }
+  },
 
   async getPaymentsByUser(userId) {
     const query = `
@@ -315,7 +299,7 @@ async createPayment(paymentData) {
       WHERE user_id = $1 
       ORDER BY date DESC, created_at DESC
     `;
-    const result = await pool.query(query, [userId]);
+    const result = await db.query(query, [userId]);
     return result.rows;
   },
 
@@ -324,17 +308,14 @@ async createPayment(paymentData) {
     try {
       if (!plotTaken || !pricePerPlot) return 0;
       
-      // Parse plot_taken (e.g., "Plot 1, Plot 2, Plot 3")
       const plots = plotTaken.split(',').map(plot => plot.trim());
       const numberOfPlots = plots.length;
       
-      // Parse price_per_plot (comma-separated string of prices)
       const prices = pricePerPlot.split(',').map(price => {
         const parsed = parseFloat(price.trim());
         return isNaN(parsed) ? 0 : parsed;
       });
       
-      // Calculate total money to pay
       let total = 0;
       for (let i = 0; i < Math.min(numberOfPlots, prices.length); i++) {
         total += prices[i];
@@ -347,7 +328,6 @@ async createPayment(paymentData) {
     }
   },
 
-  // ====================== Helper to get user with detailed financial info ======================
   async getUserFinancialDetails(userId) {
     const user = await this.getUserById(userId);
     if (!user) return null;
@@ -368,6 +348,5 @@ async createPayment(paymentData) {
     };
   }
 };
-
 
 module.exports = Admin;
