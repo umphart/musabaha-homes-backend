@@ -1,5 +1,5 @@
-const { Pool } = require('pg');
-require('dotenv').config();
+const { Pool } = require("pg");
+require("dotenv").config();
 
 const pool = new Pool({
   host: process.env.DB_HOST,
@@ -8,21 +8,22 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   ssl: {
-    rejectUnauthorized: false
+    rejectUnauthorized: false, // required for Render DB
   },
-  connectionTimeoutMillis: 5000,
-  idleTimeoutMillis: 30000,
-  max: 20
 });
 
-// Test connection
-pool.on('connect', () => {
-  console.log('Connected to PostgreSQL database');
+pool.connect((err, client, release) => {
+  if (err) {
+    return console.error("Error acquiring client", err.stack);
+  }
+  console.log("✅ Connected to Render PostgreSQL database");
+  client.query("SELECT NOW()", (err, result) => {
+    release();
+    if (err) {
+      return console.error("Error executing query", err.stack);
+    }
+    console.log("⏰ Database time:", result.rows[0]);
+  });
 });
 
-pool.on('error', (err) => {
-  console.error('Database connection error:', err);
-});
-
-// Export only the pool (remove the second export)
 module.exports = pool;
