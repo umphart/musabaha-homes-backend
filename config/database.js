@@ -15,12 +15,14 @@ const pool = new Pool({
   max: 20
 });
 
-// Export the pool directly
-module.exports = pool;
+// Test connection
+pool.on('connect', () => {
+  console.log('Connected to PostgreSQL database');
+});
 
-// Or export an object with the pool and methods
-module.exports = {
-  pool,
-  query: (text, params) => pool.query(text, params),
-  getClient: () => pool.connect()
-};
+pool.on('error', (err) => {
+  console.error('Database connection error:', err);
+});
+
+// Export only the pool (remove the second export)
+module.exports = pool;
