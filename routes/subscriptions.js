@@ -320,100 +320,100 @@ router.get("/", async (req, res) => {
 });
 
 // Approve a subscription
-// router.put("/:id/approve", async (req, res) => {
-//   const client = await pool.connect();
+router.put("/:id/approve", async (req, res) => {
+  const client = await pool.connect();
   
-//   try {
-//     await client.query('BEGIN');
+  try {
+    await client.query('BEGIN');
     
-//     const { id } = req.params;
+    const { id } = req.params;
     
-//     // First, get the subscription
-//     const subscription = await Subscription.getById(id);
+    // First, get the subscription
+    const subscription = await Subscription.getById(id);
     
-//     if (!subscription) {
-//       return res.status(404).json({ 
-//         success: false, 
-//         message: "Subscription not found" 
-//       });
-//     }
+    if (!subscription) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Subscription not found" 
+      });
+    }
 
-//     // Update subscription status
-//     const updatedSubscription = await Subscription.updateStatus(id, "approved");
+    // Update subscription status
+    const updatedSubscription = await Subscription.updateStatus(id, "approved");
     
-//     // Get all plot IDs associated with this subscription
-//     let plotIds = [];
+    // Get all plot IDs associated with this subscription
+    let plotIds = [];
     
-//     console.log("Subscription plot_ids:", subscription.plot_ids);
-//     console.log("Subscription plot_id:", subscription.plot_id);
+    console.log("Subscription plot_ids:", subscription.plot_ids);
+    console.log("Subscription plot_id:", subscription.plot_id);
     
-//     // ✅ FIXED: Handle plot_ids properly - it's stored as a string "49, 50"
-//     if (subscription.plot_ids) {
-//       if (typeof subscription.plot_ids === 'string') {
-//         // Convert string "49, 50" to array [49, 50]
-//         plotIds = subscription.plot_ids.split(',')
-//           .map(plotId => plotId.trim())
-//           .filter(plotId => plotId !== '');
-//       } else if (Array.isArray(subscription.plot_ids)) {
-//         plotIds = subscription.plot_ids;
-//       }
-//     }
+    // ✅ FIXED: Handle plot_ids properly - it's stored as a string "49, 50"
+    if (subscription.plot_ids) {
+      if (typeof subscription.plot_ids === 'string') {
+        // Convert string "49, 50" to array [49, 50]
+        plotIds = subscription.plot_ids.split(',')
+          .map(plotId => plotId.trim())
+          .filter(plotId => plotId !== '');
+      } else if (Array.isArray(subscription.plot_ids)) {
+        plotIds = subscription.plot_ids;
+      }
+    }
     
-//     // Fallback to single plot_id if no plot_ids found
-//     if (plotIds.length === 0 && subscription.plot_id) {
-//       plotIds = [subscription.plot_id];
-//     }
+    // Fallback to single plot_id if no plot_ids found
+    if (plotIds.length === 0 && subscription.plot_id) {
+      plotIds = [subscription.plot_id];
+    }
     
-//     console.log(`✅ Approving subscription ${id} with ${plotIds.length} plots:`, plotIds);
+    console.log(`✅ Approving subscription ${id} with ${plotIds.length} plots:`, plotIds);
 
-//     // Update ALL selected plots status to "Sold"
-//     if (plotIds.length > 0) {
-//       for (const plotId of plotIds) {
-//         const updatePlotQuery = `
-//           UPDATE plots 
-//           SET status = 'Sold', 
-//               sold_at = NOW(),
-//               updated_at = NOW()
-//           WHERE id = $1
-//           RETURNING *;
-//         `;
+    // Update ALL selected plots status to "Sold"
+    if (plotIds.length > 0) {
+      for (const plotId of plotIds) {
+        const updatePlotQuery = `
+          UPDATE plots 
+          SET status = 'Sold', 
+              sold_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $1
+          RETURNING *;
+        `;
         
-//         const plotResult = await client.query(updatePlotQuery, [plotId]);
+        const plotResult = await client.query(updatePlotQuery, [plotId]);
         
-//         if (plotResult.rows.length === 0) {
-//           console.warn(`⚠️ Plot ${plotId} not found during approval`);
-//         } else {
-//           const updatedPlot = plotResult.rows[0];
-//           console.log(`✅ Plot ${plotId} (${updatedPlot.number}) status updated to Sold`);
-//         }
-//       }
-//     } else {
-//       console.warn("⚠️ No plot IDs found for this subscription");
-//     }
+        if (plotResult.rows.length === 0) {
+          console.warn(`⚠️ Plot ${plotId} not found during approval`);
+        } else {
+          const updatedPlot = plotResult.rows[0];
+          console.log(`✅ Plot ${plotId} (${updatedPlot.number}) status updated to Sold`);
+        }
+      }
+    } else {
+      console.warn("⚠️ No plot IDs found for this subscription");
+    }
 
-//     await client.query('COMMIT');
+    await client.query('COMMIT');
     
-//     res.json({ 
-//       success: true, 
-//       message: `Subscription approved successfully for ${plotIds.length} plot(s): ${plotIds.join(', ')}`,
-//       data: {
-//         ...updatedSubscription,
-//         plotIds: plotIds
-//       }
-//     });
+    res.json({ 
+      success: true, 
+      message: `Subscription approved successfully for ${plotIds.length} plot(s): ${plotIds.join(', ')}`,
+      data: {
+        ...updatedSubscription,
+        plotIds: plotIds
+      }
+    });
     
-//     console.log(`🎉 Subscription ${id} approved successfully for ${plotIds.length} plots`);
-//   } catch (error) {
-//     await client.query('ROLLBACK');
-//     console.error("❌ Error approving subscription:", error);
-//     res.status(500).json({ 
-//       success: false, 
-//       error: error.message 
-//     });
-//   } finally {
-//     client.release();
-//   }
-// });
+    console.log(`🎉 Subscription ${id} approved successfully for ${plotIds.length} plots`);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error("❌ Error approving subscription:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  } finally {
+    client.release();
+  }
+});
 // Reject a subscription
 router.put("/:id/reject", async (req, res) => {
   const client = await pool.connect();
