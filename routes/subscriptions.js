@@ -538,7 +538,7 @@ router.put("/:id", async (req, res) => {
 
     res.json({
       success: true,
-      message: "Subscription updated successfully",
+      message: "Subscription updated successfull..y",
       data: result.rows[0]
     });
   } catch (error) {
