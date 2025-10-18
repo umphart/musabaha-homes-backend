@@ -81,15 +81,14 @@ async createUser(userData) {
       plot_taken,
       date_taken,
       initial_deposit,
-      price_per_plot, // This will store "300000,70000"
+      price_per_plot, 
       payment_schedule,
       total_balance,
-      total_money_to_pay, // This will store 370000
+      total_money_to_pay, 
       status
     ];
 
-    console.log('Inserting into database with values:', userValues);
-
+  
     const userResult = await client.query(userQuery, userValues);
     const newUser = userResult.rows[0];
 
