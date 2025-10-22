@@ -45,7 +45,7 @@ const userSubsequentPaymentsRoutes = require("./routes/userSubsequentPayments");
 const plotRoutes = require('./routes/plots');
 const subscriptionRoutes = require('./routes/subscriptions');
 const userPaymentRoutes = require('./routes/UserPayment');
-const layoutPlanRoutes = require('./routes/layoutPlan');
+const layoutPlanRoutes = require('./routes/LayoutPlan');
 
 // Use routes
 app.use("/api/user-subsequent-payments", userSubsequentPaymentsRoutes);
