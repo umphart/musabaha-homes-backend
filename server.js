@@ -33,31 +33,64 @@ app.use(
   })
 );
 
-
 // Serve uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Import routes
 const userSubsequentPaymentsRoutes = require("./routes/userSubsequentPayments");
-app.use("/api/user-subsequent-payments", userSubsequentPaymentsRoutes);
-app.use('/api/layout-plan', require('./routes/LayoutPlan'));
-
 const plotRoutes = require('./routes/plots');
-app.use('/api/plots', plotRoutes);
 const subscriptionRoutes = require('./routes/subscriptions');
-app.use('/api/subscriptions', subscriptionRoutes);
 const userPaymentRoutes = require('./routes/UserPayment');
+const layoutPlanRoutes = require('./routes/layoutPlan');
+
+// Use routes
+app.use("/api/user-subsequent-payments", userSubsequentPaymentsRoutes);
+app.use('/api/plots', plotRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/user-payments', userPaymentRoutes);
-
-
+app.use('/api/layout-plan', layoutPlanRoutes);
 
 // Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN,
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'your-secret-key', {
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
   });
+};
+
+// Authentication middleware
+const auth = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided, authorization denied'
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const admin = await Admin.findById(decoded.id);
+    
+    if (!admin) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token is not valid'
+      });
+    }
+
+    req.admin = admin;
+    next();
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      message: 'Token is not valid'
+    });
+  }
 };
 
 // ====================== AUTHENTICATION ENDPOINTS ======================
@@ -174,6 +207,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   }
 });
+
 // Get all users
 app.get('/api/auth/users', async (req, res) => {
   try {
@@ -311,7 +345,7 @@ app.get('/api/auth/me', async (req, res) => {
     
     // Verify token
     const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET || 'your-secret-key');
     
     // Get user from database
     const user = await User.findById(decoded.id);
@@ -349,49 +383,20 @@ app.get('/api/auth/me', async (req, res) => {
 });
 
 // Admin profile endpoint (protected)
-app.get('/api/admin/me', async (req, res) => {
+app.get('/api/admin/me', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Get admin from database
-    const admin = await Admin.findById(decoded.id);
-    
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-    
     res.json({
       success: true,
       data: {
-        id: admin.id,
-        name: admin.name,
-        email: admin.email
+        id: req.admin.id,
+        name: req.admin.name,
+        email: req.admin.email
       },
       message: 'Admin profile retrieved successfully'
     });
     
   } catch (error) {
     console.error('Get admin profile error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
@@ -402,30 +407,8 @@ app.get('/api/admin/me', async (req, res) => {
 // ====================== USER MANAGEMENT ENDPOINTS ======================
 
 // Get all users (protected - admin only)
-app.get('/api/admin/users', async (req, res) => {
+app.get('/api/admin/users', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Verify admin exists
-    const admin = await Admin.findById(decoded.id);
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-
     // Get all users
     const users = await Admin.getAllUsers();
     
@@ -437,12 +420,6 @@ app.get('/api/admin/users', async (req, res) => {
     
   } catch (error) {
     console.error('Get users error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
@@ -451,30 +428,8 @@ app.get('/api/admin/users', async (req, res) => {
 });
 
 // Get user by ID (protected - admin only)
-app.get('/api/admin/users/:id', async (req, res) => {
+app.get('/api/admin/users/:id', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Verify admin exists
-    const admin = await Admin.findById(decoded.id);
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-
     // Get user by ID
     const user = await Admin.getUserById(req.params.id);
     
@@ -493,12 +448,6 @@ app.get('/api/admin/users/:id', async (req, res) => {
     
   } catch (error) {
     console.error('Get user error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
@@ -507,30 +456,8 @@ app.get('/api/admin/users/:id', async (req, res) => {
 });
 
 // Create user (protected - admin only)
-app.post('/api/admin/users', async (req, res) => {
+app.post('/api/admin/users', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Verify admin exists
-    const admin = await Admin.findById(decoded.id);
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-
     const {
       name,
       contact,
@@ -577,12 +504,6 @@ app.post('/api/admin/users', async (req, res) => {
     
   } catch (error) {
     console.error('Create user error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
@@ -590,33 +511,366 @@ app.post('/api/admin/users', async (req, res) => {
   }
 });
 
+// ====================== UPDATE USER ENDPOINTS ======================
+
+// Update user (PUT - full update)
+app.put('/api/admin/users/:id', auth, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const updateData = req.body;
+
+    // Check if user exists
+    const existingUser = await Admin.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const client = await require('./config/database').connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Build dynamic update query based on provided fields
+      const updateFields = [];
+      const updateValues = [];
+      let paramCount = 1;
+
+      // Fields that can be updated
+      const allowedFields = [
+        'name', 'contact', 'plot_taken', 'date_taken', 'initial_deposit',
+        'price_per_plot', 'payment_schedule', 'total_money_to_pay', 'status'
+      ];
+
+      allowedFields.forEach(field => {
+        if (updateData[field] !== undefined) {
+          updateFields.push(`${field} = $${paramCount}`);
+          updateValues.push(updateData[field]);
+          paramCount++;
+        }
+      });
+
+      // Add updated_at timestamp
+      updateFields.push(`updated_at = $${paramCount}`);
+      updateValues.push(new Date());
+      paramCount++;
+
+      // Add user_id for WHERE clause
+      updateValues.push(userId);
+
+      const updateQuery = `
+        UPDATE usersTable 
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramCount}
+        RETURNING *
+      `;
+
+      const result = await client.query(updateQuery, updateValues);
+      const updatedUser = result.rows[0];
+
+      // If plot_taken is being updated, handle plot status changes
+      if (updateData.plot_taken !== undefined) {
+        // First, reset previously taken plots to Available
+        const resetPlotsQuery = `
+          UPDATE plots 
+          SET status = 'Available', 
+              owner = NULL, 
+              reserved_at = NULL, 
+              updated_at = NOW()
+          WHERE owner = $1
+        `;
+        await client.query(resetPlotsQuery, [existingUser.name]);
+
+        // Then update new plots to Sold
+        if (updateData.plot_taken && updateData.plot_taken.trim() !== '') {
+          const plotNumbers = updateData.plot_taken.split(',').map(plot => plot.trim());
+          
+          for (const plotNumber of plotNumbers) {
+            const updatePlotQuery = `
+              UPDATE plots 
+              SET status = 'Sold', 
+                  owner = $1, 
+                  reserved_at = NOW(), 
+                  updated_at = NOW()
+              WHERE number = $2
+              RETURNING *
+            `;
+            
+            const plotValues = [updatedUser.name, plotNumber];
+            await client.query(updatePlotQuery, plotValues);
+          }
+        }
+      }
+
+      // If initial_deposit or total_money_to_pay is updated, recalculate balance
+      if (updateData.initial_deposit !== undefined || updateData.total_money_to_pay !== undefined) {
+        const payments = await Admin.getPaymentsByUser(userId);
+        const totalSubsequentPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+        const totalPaid = parseFloat(updatedUser.initial_deposit || 0) + totalSubsequentPayments;
+        const currentBalance = Math.max(0, parseFloat(updatedUser.total_money_to_pay) - totalPaid);
+        
+        // Update balance and status
+        let status = updatedUser.status;
+        if (currentBalance <= 0) {
+          status = 'Completed';
+        } else if (currentBalance > 0 && status === 'Completed') {
+          status = 'Active';
+        }
+
+        const updateBalanceQuery = `
+          UPDATE usersTable 
+          SET total_balance = $1, status = $2 
+          WHERE id = $3
+        `;
+        await client.query(updateBalanceQuery, [currentBalance, status, userId]);
+        
+        // Update the returned user data
+        updatedUser.total_balance = currentBalance;
+        updatedUser.status = status;
+      }
+
+      await client.query('COMMIT');
+
+      res.json({
+        success: true,
+        message: 'User updated successfully',
+        user: updatedUser
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user',
+      error: error.message
+    });
+  }
+});
+
+// Partial update user (PATCH)
+app.patch('/api/admin/users/:id', auth, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const updateData = req.body;
+
+    // Check if user exists
+    const existingUser = await Admin.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const client = await require('./config/database').connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Build dynamic update query based on provided fields
+      const updateFields = [];
+      const updateValues = [];
+      let paramCount = 1;
+
+      // Fields that can be updated
+      const allowedFields = [
+        'name', 'contact', 'plot_taken', 'date_taken', 'initial_deposit',
+        'price_per_plot', 'payment_schedule', 'total_money_to_pay'
+      ];
+
+      allowedFields.forEach(field => {
+        if (updateData[field] !== undefined) {
+          updateFields.push(`${field} = $${paramCount}`);
+          updateValues.push(updateData[field]);
+          paramCount++;
+        }
+      });
+
+      // Add updated_at timestamp
+      updateFields.push(`updated_at = $${paramCount}`);
+      updateValues.push(new Date());
+      paramCount++;
+
+      // Add user_id for WHERE clause
+      updateValues.push(userId);
+
+      const updateQuery = `
+        UPDATE usersTable 
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramCount}
+        RETURNING *
+      `;
+
+      const result = await client.query(updateQuery, updateValues);
+      const updatedUser = result.rows[0];
+
+      // Handle plot updates if plot_taken was modified
+      if (updateData.plot_taken !== undefined) {
+        // Reset previous plots
+        const resetPlotsQuery = `
+          UPDATE plots 
+          SET status = 'Available', 
+              owner = NULL, 
+              reserved_at = NULL, 
+              updated_at = NOW()
+          WHERE owner = $1
+        `;
+        await client.query(resetPlotsQuery, [existingUser.name]);
+
+        // Update new plots
+        if (updateData.plot_taken && updateData.plot_taken.trim() !== '') {
+          const plotNumbers = updateData.plot_taken.split(',').map(plot => plot.trim());
+          
+          for (const plotNumber of plotNumbers) {
+            const updatePlotQuery = `
+              UPDATE plots 
+              SET status = 'Sold', 
+                  owner = $1, 
+                  reserved_at = NOW(), 
+                  updated_at = NOW()
+              WHERE number = $2
+            `;
+            await client.query(updatePlotQuery, [updatedUser.name, plotNumber]);
+          }
+        }
+      }
+
+      // Recalculate balance if financial fields were updated
+      if (updateData.initial_deposit !== undefined || updateData.total_money_to_pay !== undefined) {
+        const payments = await Admin.getPaymentsByUser(userId);
+        const totalSubsequentPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+        const totalPaid = parseFloat(updatedUser.initial_deposit || 0) + totalSubsequentPayments;
+        const currentBalance = Math.max(0, parseFloat(updatedUser.total_money_to_pay) - totalPaid);
+        
+        let status = updatedUser.status;
+        if (currentBalance <= 0) {
+          status = 'Completed';
+        } else if (currentBalance > 0 && status === 'Completed') {
+          status = 'Active';
+        }
+
+        const updateBalanceQuery = `
+          UPDATE usersTable 
+          SET total_balance = $1, status = $2 
+          WHERE id = $3
+        `;
+        await client.query(updateBalanceQuery, [currentBalance, status, userId]);
+      }
+
+      await client.query('COMMIT');
+
+      // Get the final updated user with calculated balances
+      const finalUser = await Admin.getUserById(userId);
+
+      res.json({
+        success: true,
+        message: 'User updated successfully',
+        user: finalUser
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update user',
+      error: error.message
+    });
+  }
+});
+
+// ====================== DELETE USER ENDPOINT ======================
+
+// Delete user
+app.delete('/api/admin/users/:id', auth, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Check if user exists
+    const existingUser = await Admin.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const client = await require('./config/database').connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // 1. Reset plots associated with this user
+      if (existingUser.plot_taken) {
+        const plotNumbers = existingUser.plot_taken.split(',').map(plot => plot.trim());
+        
+        for (const plotNumber of plotNumbers) {
+          const resetPlotQuery = `
+            UPDATE plots 
+            SET status = 'Available', 
+                owner = NULL, 
+                reserved_at = NULL, 
+                updated_at = NOW()
+            WHERE number = $1
+          `;
+          await client.query(resetPlotQuery, [plotNumber]);
+        }
+      }
+
+      // 2. Delete all payments associated with this user
+      const deletePaymentsQuery = 'DELETE FROM payments WHERE user_id = $1';
+      await client.query(deletePaymentsQuery, [userId]);
+
+      // 3. Delete the user
+      const deleteUserQuery = 'DELETE FROM usersTable WHERE id = $1 RETURNING *';
+      const result = await client.query(deleteUserQuery, [userId]);
+      const deletedUser = result.rows[0];
+
+      await client.query('COMMIT');
+
+      res.json({
+        success: true,
+        message: 'User deleted successfully',
+        user: deletedUser
+      });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      error: error.message
+    });
+  }
+});
+
 // ====================== PAYMENT MANAGEMENT ENDPOINTS ======================
 
 // Create payment (protected - admin only)
-app.post('/api/admin/payments', async (req, res) => {
+app.post('/api/admin/payments', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Verify admin exists
-    const admin = await Admin.findById(decoded.id);
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-
     const {
       user_id,
       amount,
@@ -639,7 +893,7 @@ app.post('/api/admin/payments', async (req, res) => {
       amount,
       date,
       note,
-      admin: adminName || admin.email
+      admin: adminName || req.admin.email
     });
 
     res.status(201).json({
@@ -650,12 +904,6 @@ app.post('/api/admin/payments', async (req, res) => {
     
   } catch (error) {
     console.error('Create payment error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
@@ -664,30 +912,8 @@ app.post('/api/admin/payments', async (req, res) => {
 });
 
 // Get payments by user ID (protected - admin only)
-app.get('/api/admin/payments/user/:id', async (req, res) => {
+app.get('/api/admin/payments/user/:id', auth, async (req, res) => {
   try {
-    // Check for token
-    const token = req.headers.authorization;
-    if (!token || !token.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, no token provided' 
-      });
-    }
-    
-    // Verify token
-    const jwtToken = token.split(' ')[1];
-    const decoded = jwt.verify(jwtToken, process.env.JWT_SECRET);
-    
-    // Verify admin exists
-    const admin = await Admin.findById(decoded.id);
-    if (!admin) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, admin not found' 
-      });
-    }
-
     // Get payments by user ID
     const payments = await Admin.getPaymentsByUser(req.params.id);
     
@@ -699,12 +925,6 @@ app.get('/api/admin/payments/user/:id', async (req, res) => {
     
   } catch (error) {
     console.error('Get payments error:', error);
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Not authorized, invalid token' 
-      });
-    }
     res.status(500).json({ 
       success: false,
       message: 'Server error' 
