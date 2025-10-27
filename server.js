@@ -26,6 +26,7 @@ app.use(
   cors({
     origin: [
       process.env.FRONTEND_URL,
+      'https://musabaha-homes-ltd.com.ng',
       "https://musabaha-homes-ltd.vercel.app",
       "http://localhost:3000"
     ],
