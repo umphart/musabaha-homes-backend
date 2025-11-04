@@ -866,7 +866,6 @@ app.delete('/api/admin/users/:id', auth, async (req, res) => {
     });
   }
 });
-
 // ====================== PAYMENT MANAGEMENT ENDPOINTS ======================
 
 // Create payment (protected - admin only)
@@ -888,8 +887,8 @@ app.post('/api/admin/payments', auth, async (req, res) => {
       });
     }
 
-    // Create payment
-    const payment = await Admin.createPayment({
+    // Create payment using Admin model
+    const result = await Admin.createPayment({
       user_id,
       amount,
       date,
@@ -897,11 +896,18 @@ app.post('/api/admin/payments', auth, async (req, res) => {
       admin: adminName || req.admin.email
     });
 
-    res.status(201).json({
-      success: true,
-      data: payment,
-      message: 'Payment created successfully'
-    });
+    if (result.success) {
+      res.status(201).json({
+        success: true,
+        data: result.payment,
+        message: 'Payment created successfully'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.message
+      });
+    }
     
   } catch (error) {
     console.error('Create payment error:', error);
@@ -912,10 +918,126 @@ app.post('/api/admin/payments', auth, async (req, res) => {
   }
 });
 
+// Update payment (protected - admin only)
+app.put('/api/admin/payments/:id', auth, async (req, res) => {
+  try {
+    const paymentId = req.params.id;
+    const paymentData = req.body;
+    
+    // Validate required fields
+    if (!paymentData.amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amount is required'
+      });
+    }
+
+    // Validate amount is a positive number
+    const amount = parseFloat(paymentData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amount must be a valid number greater than 0'
+      });
+    }
+
+    // Use Admin model's updatePayment method
+    const result = await Admin.updatePayment(paymentId, paymentData);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Payment updated successfully',
+        payment: result.payment,
+        user_balance: result.payment.user_balance,
+        user_status: result.payment.user_status
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.message
+      });
+    }
+  } catch (error) {
+    console.error('Error in update payment route:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Delete payment (protected - admin only)
+app.delete('/api/admin/payments/:id', auth, async (req, res) => {
+  try {
+    const paymentId = req.params.id;
+    
+    // Validate payment ID
+    if (!paymentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment ID is required'
+      });
+    }
+
+    // Use Admin model's deletePayment method
+    const result = await Admin.deletePayment(paymentId);
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: result.message,
+        user_balance: result.user_balance,
+        user_status: result.user_status
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: result.message
+      });
+    }
+  } catch (error) {
+    console.error('Error in delete payment route:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get single payment (protected - admin only)
+app.get('/api/admin/payments/:id', auth, async (req, res) => {
+  try {
+    const paymentId = req.params.id;
+    
+    const paymentQuery = 'SELECT * FROM payments WHERE id = $1';
+    const paymentResult = await pool.query(paymentQuery, [paymentId]);
+    const payment = paymentResult.rows[0];
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      payment: payment
+    });
+  } catch (error) {
+    console.error('Error fetching payment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
 // Get payments by user ID (protected - admin only)
 app.get('/api/admin/payments/user/:id', auth, async (req, res) => {
   try {
-    // Get payments by user ID
+    // Get payments by user ID using Admin model
     const payments = await Admin.getPaymentsByUser(req.params.id);
     
     res.json({
@@ -933,6 +1055,31 @@ app.get('/api/admin/payments/user/:id', auth, async (req, res) => {
   }
 });
 
+// Get all payments (protected - admin only)
+app.get('/api/admin/payments', auth, async (req, res) => {
+  try {
+    const paymentsQuery = `
+      SELECT p.*, u.name as user_name, u.contact as user_contact 
+      FROM payments p 
+      LEFT JOIN usersTable u ON p.user_id = u.id 
+      ORDER BY p.created_at DESC
+    `;
+    const paymentsResult = await pool.query(paymentsQuery);
+    const payments = paymentsResult.rows;
+
+    res.json({
+      success: true,
+      payments: payments,
+      message: 'Payments retrieved successfully'
+    });
+  } catch (error) {
+    console.error('Error fetching payments:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
 // ====================== HEALTH CHECK ENDPOINT ======================
 
 // Health check endpoint
@@ -969,6 +1116,5 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Health check: https://musabaha-homes.onrender.com:${PORT}/api/health`);
-
+  console.log(`Health check: http://localhost:${PORT}/api/health`);
 });
