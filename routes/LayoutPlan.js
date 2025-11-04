@@ -10,7 +10,7 @@ router.use((req, res, next) => {
   // Allow iframe embedding from React development servers
   res.setHeader(
     "Content-Security-Policy", 
-    "frame-ancestors 'self' https://musabaha-homes.onrender.com http://localhost:3000;"
+    "frame-ancestors 'self' http://localhost:3000 http://localhost:3001;"
   );
   next();
 });

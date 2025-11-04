@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -14,6 +15,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   console.log('Uploads directory created');
 }
+
 // Load env vars
 dotenv.config();
 
@@ -22,6 +24,7 @@ const app = express();
 // Security middleware
 app.use(helmet());
 
+// CORS middleware
 app.use(
   cors({
     origin: [
@@ -33,10 +36,26 @@ app.use(
     credentials: true,
   })
 );
+const subsequentPaymentsRoutes = require("./routes/subsequentPayments");
+const approvePaymentRoutes = require("./routes/approvePayments");
+const paymentRoutes = require("./routes/payment");
+const adminRoutes = require("./routes/admin");
+app.use("/api/payments", paymentRoutes);
+
+
+app.use("/api/subsequent-payments", subsequentPaymentsRoutes);
+app.use("/api/approve-payment", approvePaymentRoutes);
+app.use("/api/subsequent-payments", require("./routes/subsequentPayments"));
+// In your app.js or server.js file
+const userPaymentRequestsRoutes = require("./routes/userPaymentRequests");
+
+
+// Add these routes to your Express app
+app.use("/api/user-payment-requests", userPaymentRequestsRoutes);
+app.use("/api/approve-payment", approvePaymentRoutes);
 
 // Serve uploaded files
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
 // Body parser middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -408,10 +427,64 @@ app.get('/api/admin/me', auth, async (req, res) => {
 // ====================== USER MANAGEMENT ENDPOINTS ======================
 
 // Get all users (protected - admin only)
+// In your routes file (likely routes/admin.js or similar)
+// Add this test route - NO AUTH, SIMPLE QUERY
+app.get('/api/admin/users-test', async (req, res) => {
+  console.log('🔍 Testing simple users query...');
+  
+  try {
+    // Simple query without any joins or complex logic
+    const result = await pool.query('SELECT id, name FROM usersTable LIMIT 5');
+    console.log(`✅ Test query successful, found ${result.rows.length} users`);
+    
+    res.json({
+      success: true,
+      data: result.rows,
+      message: 'Test query successful'
+    });
+    
+  } catch (error) {
+    console.error('❌ Test query failed:', error);
+    console.error('❌ Full error details:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      table: error.table
+    });
+    
+    res.status(500).json({
+      success: false,
+      message: 'Test failed: ' + error.message,
+      error: error.detail
+    });
+  }
+});
+// Add this debug route
+app.get('/api/debug/tables', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'userstable'
+    `);
+    
+    res.json({
+      success: true,
+      columns: result.rows
+    });
+  } catch (error) {
+    console.error('Debug error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 app.get('/api/admin/users', auth, async (req, res) => {
   try {
+    console.log('🔍 Fetching all users for admin...');
+    
     // Get all users
     const users = await Admin.getAllUsers();
+    
+    console.log(`✅ Retrieved ${users.length} users successfully`);
     
     res.json({
       success: true,
@@ -420,10 +493,11 @@ app.get('/api/admin/users', auth, async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Get users error:', error);
+    console.error('❌ Get users error:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Server error' 
+      message: 'Server error fetching users',
+      error: error.message // Include error message for debugging
     });
   }
 });
@@ -455,63 +529,68 @@ app.get('/api/admin/users/:id', auth, async (req, res) => {
     });
   }
 });
-
-// Create user (protected - admin only)
-app.post('/api/admin/users', auth, async (req, res) => {
+// Add this authentication middleware before your routes in server.js
+const authenticateAdmin = (req, res, next) => {
   try {
-    const {
-      name,
-      contact,
-      plot_taken,
-      date_taken,
-      initial_deposit,
-      price_per_plot,
-      payment_schedule,
-      total_balance,
-      status
-    } = req.body;
+    const token = req.header('Authorization')?.replace('Bearer ', '');
 
-    // Validation
-    if (!name || !contact || !plot_taken || !date_taken || !initial_deposit || 
-        !price_per_plot || !payment_schedule || !total_balance) {
-      return res.status(400).json({ 
+    if (!token) {
+      return res.status(401).json({
         success: false,
-        message: 'Please provide all required fields' 
+        message: 'Access denied. No token provided.'
       });
     }
 
-    // Calculate total_money_to_pay
-    const total_money_to_pay = await Admin.calculateTotalMoneyToPay(plot_taken, price_per_plot);
-
-    // Create user
-    const user = await Admin.createUser({
-      name,
-      contact,
-      plot_taken,
-      date_taken,
-      initial_deposit,
-      price_per_plot,
-      payment_schedule,
-      total_balance,
-      total_money_to_pay,
-      status: status || 'Active'
+    // Verify token (using the same secret as in your login)
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    
+    // You can add additional checks here if needed
+    // For example, verify that the user is actually an admin
+    req.admin = decoded;
+    
+    next();
+  } catch (error) {
+    console.error('Authentication error:', error);
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid token.'
     });
+  }
+};
 
-    res.status(201).json({
+// Create user (protected - admin only)
+app.post('/api/admin/users', authenticateAdmin, async (req, res) => {
+  try {
+    console.log('Received user data:', req.body); // Debug log
+    
+    const userData = {
+      name: req.body.name,
+      email: req.body.email, // Make sure this is being read
+      contact: req.body.contact,
+      plot_taken: req.body.plot_taken,
+      date_taken: req.body.date_taken,
+      initial_deposit: req.body.initial_deposit,
+      price_per_plot: req.body.price_per_plot,
+      payment_schedule: req.body.payment_schedule,
+      total_money_to_pay: req.body.total_money_to_pay,
+      plot_number: req.body.number_of_plots
+    };
+
+    const newUser = await Admin.createUser(userData);
+    
+    res.json({
       success: true,
-      data: user,
+      user: newUser,
       message: 'User created successfully'
     });
-    
   } catch (error) {
-    console.error('Create user error:', error);
-    res.status(500).json({ 
+    console.error('Error in user creation route:', error);
+    res.status(400).json({
       success: false,
-      message: 'Server error' 
+      message: error.message
     });
   }
 });
-
 // ====================== UPDATE USER ENDPOINTS ======================
 
 // Update user (PUT - full update)
@@ -866,6 +945,7 @@ app.delete('/api/admin/users/:id', auth, async (req, res) => {
     });
   }
 });
+
 // ====================== PAYMENT MANAGEMENT ENDPOINTS ======================
 
 // Create payment (protected - admin only)

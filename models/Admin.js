@@ -175,22 +175,23 @@ const Admin = {
   },
 
   // Update getAllUsers to join with users table if needed
-  async getAllUsers() {
-    const query = `
-      SELECT ut.*, u.email as login_email 
-      FROM usersTable ut 
-      LEFT JOIN users u ON ut.user_id = u.id 
-      ORDER BY ut.id ASC
-    `;
+ async getAllUsers() {
+  const query = `
+    SELECT ut.* 
+    FROM usersTable ut 
+    ORDER BY ut.id ASC
+  `;
+  
+  try {
     const result = await pool.query(query);
     
     // For each user, calculate current balance based on initial deposit + payments
     const usersWithUpdatedBalance = await Promise.all(
       result.rows.map(async (user) => {
         const payments = await this.getPaymentsByUser(user.id);
-        const totalSubsequentPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0);
+        const totalSubsequentPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amount || 0), 0);
         const totalPaid = parseFloat(user.initial_deposit || 0) + totalSubsequentPayments;
-        const currentBalance = Math.max(0, parseFloat(user.total_money_to_pay) - totalPaid);
+        const currentBalance = Math.max(0, parseFloat(user.total_money_to_pay || user.price_per_plot || 0) - totalPaid);
         
         // Update status if fully paid
         let status = user.status;
@@ -227,7 +228,11 @@ const Admin = {
     );
 
     return usersWithUpdatedBalance;
-  },
+  } catch (error) {
+    console.error('Error in getAllUsers:', error);
+    throw error;
+  }
+},
 
   // Update getUserById to include login email
   async getUserById(userId) {

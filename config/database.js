@@ -2,28 +2,38 @@ const { Pool } = require("pg");
 require("dotenv").config();
 
 const pool = new Pool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // required for Render DB
+    rejectUnauthorized: false,
   },
+  // Additional connection options
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  max: 20, // maximum number of clients in the pool
 });
 
-pool.connect((err, client, release) => {
-  if (err) {
-    return console.error("Error acquiring client", err.stack);
-  }
-  console.log("✅ Connected to Render PostgreSQL database");
-  client.query("SELECT NOW()", (err, result) => {
-    release();
-    if (err) {
-      return console.error("Error executing query", err.stack);
-    }
-    console.log("⏰ Database time:", result.rows[0]);
-  });
+// Better connection test with error handling
+pool.on('connect', () => {
+  console.log('✅ Database connection established');
 });
+
+pool.on('error', (err) => {
+  console.error('❌ Database connection error:', err);
+});
+
+// Test connection function
+async function testConnection() {
+  try {
+    const client = await pool.connect();
+    console.log('✅ Successfully connected to PostgreSQL');
+    const result = await client.query('SELECT NOW()');
+    console.log('⏰ Database time:', result.rows[0].now);
+    client.release();
+  } catch (err) {
+    console.error('❌ Connection test failed:', err.message);
+  }
+}
+
+testConnection();
 
 module.exports = pool;
