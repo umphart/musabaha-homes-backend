@@ -19,14 +19,9 @@ router.post(
       await client.query('BEGIN');
 
       const data = req.body;
-      console.log("Received subscription data:", data);
-      console.log("Received files:", req.files);
-
-      // ✅ IMPROVED: Extract plot IDs from selectedPlotIds
+     
       let plotIds = [];
-      
-      console.log("Raw selectedPlotIds:", data.selectedPlotIds);
-      
+   
       if (data.selectedPlotIds) {
         // Handle array format: selectedPlotIds[0], selectedPlotIds[1], etc.
         if (typeof data.selectedPlotIds === 'object') {
@@ -48,9 +43,7 @@ router.post(
         }
       }
 
-      console.log("✅ Processed plot IDs:", plotIds);
-      console.log("✅ Number of plots:", plotIds.length);
-
+     
       // Validate that at least one plot is selected
       if (plotIds.length === 0) {
         return res.status(400).json({
@@ -93,15 +86,13 @@ router.post(
 
       // ✅ FIXED: Set plot_ids field to store all plot IDs as string
       data.plot_ids = plotIds.join(', ');
-      console.log("✅ Setting plot_ids:", data.plot_ids);
-
+    
       // ✅ FIXED: Handle price_per_plot - clean up and ensure single value
       if (data.price_per_plot) {
         // If it's an array, take the first value only
         if (Array.isArray(data.price_per_plot)) {
           data.price_per_plot = data.price_per_plot[0];
-          console.log("✅ Fixed price_per_plot array:", data.price_per_plot);
-        }
+           }
         
         // Clean up the price string - remove duplicates
         if (typeof data.price_per_plot === 'string') {
@@ -112,8 +103,7 @@ router.post(
           // Take only unique prices
           const uniquePrices = [...new Set(prices)];
           data.price_per_plot = uniquePrices.join(', ');
-          console.log("✅ Cleaned price_per_plot:", data.price_per_plot);
-        }
+             }
       }
 
       // ✅ FIXED: Calculate total price properly based on individual plot prices
@@ -131,8 +121,7 @@ router.post(
             const plotNumber = plotResult.rows[0].number;
             individualPrices.push(plotPrice);
             totalPrice += plotPrice;
-            console.log(`✅ Plot ${plotId} (${plotNumber}): $${plotPrice}`);
-          } else {
+             } else {
             console.warn(`⚠️ Plot ${plotId} not found in database`);
           }
         }
@@ -141,9 +130,7 @@ router.post(
           data.price = totalPrice;
           // Set price_per_plot based on actual plot prices
           data.price_per_plot = individualPrices.join(', ');
-          console.log(`✅ Calculated total price from individual plots: $${totalPrice}`);
-          console.log(`✅ Individual plot prices: ${individualPrices.join(', ')}`);
-        } else {
+          } else {
           // Fallback: use simple calculation from price_per_plot
           if (data.price_per_plot) {
             const prices = data.price_per_plot.split(',')
@@ -153,8 +140,7 @@ router.post(
             if (prices.length > 0) {
               totalPrice = prices.reduce((sum, price) => sum + price, 0);
               data.price = totalPrice;
-              console.log(`✅ Calculated total price from price_per_plot: $${totalPrice}`);
-            }
+                 }
           }
         }
       } catch (error) {
@@ -162,8 +148,7 @@ router.post(
         // Final fallback: use existing price or calculate from number of plots
         if (!data.price || data.price === 0) {
           data.price = plotIds.length * 50000; // Default price fallback
-          console.log(`⚠️ Using fallback price calculation: $${data.price}`);
-        }
+            }
       }
 
       // Ensure price is a valid number
@@ -175,20 +160,11 @@ router.post(
         data.price = 0;
       }
 
-      console.log("✅ Final data for subscription:", {
-        plotIds: plotIds,
-        plot_ids: data.plot_ids,
-        price_per_plot: data.price_per_plot,
-        total_price: data.price,
-        number_of_plots: plotIds.length
-      });
-
+ 
       // Create subscription - now includes plot_ids
       const subscription = await Subscription.create(data);
 
-      // ✅ UPDATED: Update ALL selected plots status to "Reserved" and set owner
-      console.log(`🔄 Updating ${plotIds.length} plots to Reserved status with owner: ${data.name}`);
-      
+    
       const updatedPlots = [];
       for (const plotId of plotIds) {
         const updatePlotQuery = `
@@ -213,8 +189,7 @@ router.post(
         } else {
           const updatedPlot = plotResult.rows[0];
           updatedPlots.push(updatedPlot);
-          console.log(`✅ Plot ${plotId} (${updatedPlot.number}) status updated to Reserved, owner: ${data.name}`);
-        }
+           }
       }
 
       await client.query('COMMIT');
@@ -231,9 +206,7 @@ router.post(
         }
       });
       
-      console.log(`🎉 Subscription ${subscription.id} created successfully for ${plotIds.length} plots`);
-      console.log(`📊 Final details - Plot IDs: ${subscription.plot_ids}, Price: $${subscription.price}`);
-      
+       
     } catch (error) {
       await client.query('ROLLBACK');
       console.error("❌ Error creating subscription:", error);
@@ -310,8 +283,7 @@ router.get("/", async (req, res) => {
       count: subscriptions.length,
       data: subscriptions 
     });
-    console.log(`Fetched ${subscriptions.length} subscriptions for email: ${email}`);
-  } catch (error) {
+   } catch (error) {
     console.error("Error fetching subscriptions:", error);
     res.status(500).json({ 
       success: false, 
@@ -345,10 +317,7 @@ router.put("/:id/approve", async (req, res) => {
     // Get all plot IDs associated with this subscription
     let plotIds = [];
     
-    console.log("Subscription plot_ids:", subscription.plot_ids);
-    console.log("Subscription plot_id:", subscription.plot_id);
-    
-    // ✅ FIXED: Handle plot_ids properly - it's stored as a string "49, 50"
+      // ✅ FIXED: Handle plot_ids properly - it's stored as a string "49, 50"
     if (subscription.plot_ids) {
       if (typeof subscription.plot_ids === 'string') {
         // Convert string "49, 50" to array [49, 50]
@@ -365,8 +334,6 @@ router.put("/:id/approve", async (req, res) => {
       plotIds = [subscription.plot_id];
     }
     
-    console.log(`✅ Approving subscription ${id} with ${plotIds.length} plots:`, plotIds);
-
     // Update ALL selected plots status to "Sold"
     if (plotIds.length > 0) {
       for (const plotId of plotIds) {
@@ -385,8 +352,7 @@ router.put("/:id/approve", async (req, res) => {
           console.warn(`⚠️ Plot ${plotId} not found during approval`);
         } else {
           const updatedPlot = plotResult.rows[0];
-          console.log(`✅ Plot ${plotId} (${updatedPlot.number}) status updated to Sold`);
-        }
+           }
       }
     } else {
       console.warn("⚠️ No plot IDs found for this subscription");
@@ -403,8 +369,7 @@ router.put("/:id/approve", async (req, res) => {
       }
     });
     
-    console.log(`🎉 Subscription ${id} approved successfully for ${plotIds.length} plots`);
-  } catch (error) {
+    } catch (error) {
     await client.query('ROLLBACK');
     console.error("❌ Error approving subscription:", error);
     res.status(500).json({ 
@@ -446,8 +411,7 @@ router.put("/:id/reject", async (req, res) => {
       plotIds = [subscription.plot_id];
     }
 
-    console.log(`Rejecting subscription ${id} with plots:`, plotIds);
-
+   
     // Update ALL selected plots status back to "Available"
     if (plotIds.length > 0) {
       for (const plotId of plotIds) {
@@ -467,8 +431,7 @@ router.put("/:id/reject", async (req, res) => {
         if (plotResult.rows.length === 0) {
           console.warn(`Plot ${plotId} not found during rejection`);
         } else {
-          console.log(`Plot ${plotId} status updated to Available`);
-        }
+    }
       }
     }
 

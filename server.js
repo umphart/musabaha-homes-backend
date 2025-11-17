@@ -13,7 +13,7 @@ const path = require('path');
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Uploads directory created');
+ 
 }
 
 // Load env vars
@@ -426,17 +426,13 @@ app.get('/api/admin/me', auth, async (req, res) => {
 
 // ====================== USER MANAGEMENT ENDPOINTS ======================
 
-// Get all users (protected - admin only)
-// In your routes file (likely routes/admin.js or similar)
-// Add this test route - NO AUTH, SIMPLE QUERY
 app.get('/api/admin/users-test', async (req, res) => {
-  console.log('🔍 Testing simple users query...');
+  
   
   try {
     // Simple query without any joins or complex logic
     const result = await pool.query('SELECT id, name FROM usersTable LIMIT 5');
-    console.log(`✅ Test query successful, found ${result.rows.length} users`);
-    
+   
     res.json({
       success: true,
       data: result.rows,
@@ -479,12 +475,11 @@ app.get('/api/debug/tables', async (req, res) => {
 });
 app.get('/api/admin/users', auth, async (req, res) => {
   try {
-    console.log('🔍 Fetching all users for admin...');
+   
     
     // Get all users
     const users = await Admin.getAllUsers();
     
-    console.log(`✅ Retrieved ${users.length} users successfully`);
     
     res.json({
       success: true,

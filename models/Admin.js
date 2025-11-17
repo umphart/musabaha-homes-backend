@@ -73,7 +73,7 @@ const Admin = {
     try {
       await client.query('BEGIN');
       
-      console.log('Creating user with email:', email);
+      
       
       // Generate password from contact number for login user
       const password = contact;

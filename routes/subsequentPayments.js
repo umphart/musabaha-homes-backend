@@ -29,16 +29,7 @@ router.post("/", upload.single("receipt"), async (req, res) => {
       notes
     } = req.body;
 
-    console.log("📥 Received payment request:", {
-      userId,
-      plotId,
-      amount,
-      paymentMethod,
-      transactionDate,
-      notes
-    });
-    console.log("📁 File:", req.file ? req.file.filename : "No file");
-
+  
     // Validate required fields
     if (!userId) {
       return res.status(400).json({ 
@@ -134,8 +125,7 @@ router.post("/", upload.single("receipt"), async (req, res) => {
       ]
     );
 
-    console.log("✅ Payment request saved successfully. ID:", result.rows[0].id);
-
+ 
     res.json({ 
       success: true, 
       message: "Payment request submitted successfully",

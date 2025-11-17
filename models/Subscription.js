@@ -167,9 +167,7 @@ const Subscription = {
     `;
 
     try {
-      console.log('Executing query:', query);
-      console.log('With values:', values);
-      
+    
       const result = await pool.query(query, values);
       return result.rows[0];
     } catch (error) {
